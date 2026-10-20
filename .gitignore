@@ -1,0 +1,27 @@
+# Workspace level ignore rules for the "Flutter_Supabase_Xendit Payment"
+# repository. The Flutter project itself lives in the ./student_shop folder
+# and has its own .gitignore.
+
+# Local environment files (public Supabase values, never the secrets)
+.env
+.env.*
+!.env.example
+
+# Build output
+**/build/
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase CLI local state
+supabase/.branches/
+supabase/.temp/
+supabase/.env
