@@ -23,7 +23,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$projectRef = 'iiznhatxciycwghihnaq'
+$projectRef = 'kfvxqsxycpmawgbwugyr'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $secretsFile = Join-Path $root 'supabase\.env.local'
 
