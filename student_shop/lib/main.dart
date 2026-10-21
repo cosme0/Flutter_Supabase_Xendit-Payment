@@ -1,18 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/app_config.dart';
 import 'screens/product_list_screen.dart';
 
-Future<void> main() async {
-  // Ensures Flutter is ready before calling async code like Supabase.initialize
+void main() {
+  // The user interface is rendered first, so the app always starts - even if
+  // Supabase cannot be reached. The store shows the real error message.
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    publishableKey: AppConfig.supabaseKey,
-  );
-
   runApp(const StudentEcommerceApp());
 }
 

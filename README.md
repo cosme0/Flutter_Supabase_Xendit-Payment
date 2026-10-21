@@ -16,8 +16,8 @@ payment through the Xendit webhook.
 
 | What | Link |
 | --- | --- |
-| 📦 Release APK (Google Drive) | https://drive.google.com/file/d/1du6AA-ksiFHSI6xzjjUH1Xx0uY_L8Mbd/view |
-| ⬇️ Direct download | https://drive.usercontent.google.com/download?id=1du6AA-ksiFHSI6xzjjUH1Xx0uY_L8Mbd&export=download&confirm=t |
+| 📦 Release APK (Google Drive) | https://drive.google.com/file/d/1krwrXkI6hgzgbBCdrPRJ8ua3oLyl3M-a/view |
+| ⬇️ Direct download | https://drive.usercontent.google.com/download?id=1krwrXkI6hgzgbBCdrPRJ8ua3oLyl3M-a&export=download&confirm=t |
 | 🐙 Source code (GitHub) | https://github.com/cosme0/Flutter_Supabase_Xendit-Payment |
 
 ---
