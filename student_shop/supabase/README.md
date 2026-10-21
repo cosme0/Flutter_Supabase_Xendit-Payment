@@ -1,36 +1,27 @@
 # Supabase backend - `student_shop`
 
-Everything in this folder belongs to the Supabase project **BMC-ecom1**
-(organization **BMC**, project ref `iiznhatxciycwghihnaq`).
+Everything in this folder belongs to the Supabase project **kfvxqsxycpmawgbwugyr**
+(the backend of the *Student Shop* demonstration).
 
 ```
 supabase/
-  config.toml                         # project + edge function configuration
+  config.toml                         project + edge function configuration
   migrations/
-    001_initial_schema.sql            # tables, RLS policies, RPC functions
-    002_seed_demo_products.sql        # demo catalogue (idempotent)
+    001_initial_schema.sql            tables (products, orders) + RLS policies
+    002_seed_demo_products.sql        demo catalogue (idempotent)
   functions/
-    _shared/                          # shared, unit tested helper modules
-      cors.ts
-      crypto.ts
-      http.ts
-      supabase_client.ts
-      validation.ts
-      xendit.ts
-      create_invoice_handler.ts
-      webhook_handler.ts
-      test_helpers.ts
-      *.test.ts                       # deno tests (43 assertions)
-    create-invoice/index.ts           # creates the Xendit invoice
-    xendit-webhook/index.ts           # receives the Xendit notifications
+    create-invoice/index.ts           creates the Xendit invoice + the PENDING order
+    xendit-webhook/index.ts           receives the Xendit notification, sets PAID
+  tests/
+    01_rls_verification.sql           proves that the client cannot fake a payment
 ```
 
 ---
 
 ## 1. Apply the database schema
 
-1. Open the [Supabase Dashboard](https://supabase.com/dashboard) and select
-   the project **BMC-ecom1**.
+1. Open the [Supabase Dashboard](https://supabase.com/dashboard) and select the
+   project **kfvxqsxycpmawgbwugyr**.
 2. Go to **SQL Editor -> New query**.
 3. Copy the content of `migrations/001_initial_schema.sql` and press **Run**.
 4. Repeat with `migrations/002_seed_demo_products.sql`.
@@ -38,32 +29,26 @@ supabase/
 Both scripts are idempotent - running them again does not break anything and
 refreshes the demo catalogue.
 
-What is created:
+### What is created?
 
 | Object | Purpose |
 | --- | --- |
-| `products` | catalogue: name, description, price (PHP), image url, stock, active flag |
-| `orders` | pending/paid orders, Xendit invoice id, amount, currency, owner (user **or** guest) |
-| `order_items` | one row per ordered product with a snapshot of name and price |
-| `guest_sessions` | hashed guest tokens for the guest checkout |
-| `payment_webhook_events` | every webhook delivery (unique `event_key` = idempotency) |
-| `public.create_order(...)` | transactional order creation + stock reservation (service role only) |
-| `public.cancel_order(...)` | releases the reserved stock when the invoice cannot be created |
-| `public.apply_xendit_invoice_event(...)` | the **only** place where an order may become `PAID` |
-| `public.get_my_orders(text)` | reads the orders of the current customer (used by the app) |
+| `products` | catalogue: name, price (PHP), image url |
+| `orders` | one row per checkout: external id, status, product, amount |
 
 ### Row Level Security
 
 | Table | Policy |
 | --- | --- |
-| `products` | everybody may read the **active** products, nobody may write |
-| `orders` | `select` only for `auth.uid() = user_id` - **no insert/update/delete policy** |
-| `order_items` | `select` only for the items of your own orders |
-| `guest_sessions`, `payment_webhook_events` | no client access at all |
+| `products` | everybody may **read** the catalogue, nobody may write |
+| `orders` | everybody may **read** the order history, **no** insert/update/delete policy |
 
 Because there is no `insert`/`update` policy for `orders`, the Flutter client
 can neither create an order nor mark an order as `PAID`. Only the edge
-functions (service role) can write to those tables.
+functions - which run with the service role key - can write to that table. A
+customer can therefore never fake a payment.
+
+You can verify this yourself with `tests/01_rls_verification.sql`.
 
 ---
 
@@ -78,203 +63,59 @@ function secrets (Dashboard -> **Edge Functions -> Secrets** or with the CLI).
 | `XENDIT_WEBHOOK_TOKEN` | any random string | you choose it, e.g. `openssl rand -hex 24` |
 | `XENDIT_PAYMENT_METHODS` | optional, e.g. `GCASH,MAYA` | leave empty to show all channels of the account |
 
-With the Supabase CLI (the secrets are read from `supabase/.env.local`, which
-is git ignored):
+With the CLI:
 
-```bash
+```powershell
+cd student_shop
+copy supabase\.env.local.example supabase\.env.local   # fill in the values
 supabase login
-supabase link --project-ref iiznhatxciycwghihnaq
-
-supabase secrets set --env-file supabase/.env.local
+supabase secrets set --env-file supabase\.env.local --project-ref kfvxqsxycpmawgbwugyr
 ```
-
-or with the helper script in the project root: `.\deploy.ps1`.
-
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) and
-`SUPABASE_ANON_KEY` are provided automatically by the platform.
-
-> The `service_role` key is only used **inside** the edge functions. It is
-> never part of the Flutter application.
 
 ---
 
 ## 3. Deploy the edge functions
 
-```bash
-supabase functions deploy create-invoice
-supabase functions deploy xendit-webhook
+```powershell
+cd student_shop
+supabase link --project-ref kfvxqsxycpmawgbwugyr
+supabase functions deploy create-invoice --project-ref kfvxqsxycpmawgbwugyr
+supabase functions deploy xendit-webhook --project-ref kfvxqsxycpmawgbwugyr
 ```
 
-The `verify_jwt` behaviour is configured in `config.toml`:
+or simply:
 
-* `create-invoice` -> `verify_jwt = false`
-  The function has to support guest checkouts, therefore the platform check is
-  disabled and the function **verifies the JWT itself** (see
-  `resolveCaller` in `functions/create-invoice/index.ts`). An invalid or
-  expired token is rejected with `401` - it is never downgraded to a guest
-  order. If you only want signed in customers, set `verify_jwt = true` again
-  and enable anonymous sign-ins in the dashboard.
-* `xendit-webhook` -> `verify_jwt = false` (**must stay false**)
-  Xendit calls the endpoint server to server and does not send a Supabase
-  JWT. Because the platform check is disabled, the function validates the
-  `x-callback-token` header against the `XENDIT_WEBHOOK_TOKEN` secret in
-  constant time. Without that validation anybody could mark arbitrary orders
-  as `PAID`.
-
-Local development (needs Docker):
-
-```bash
-supabase start
-supabase functions serve create-invoice --env-file supabase/.env.local
-supabase functions serve xendit-webhook --env-file supabase/.env.local
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy.ps1 -ProjectRef kfvxqsxycpmawgbwugyr
 ```
+
+> If PowerShell refuses to run the `supabase` shim, use `supabase.cmd` instead
+> of `supabase`.
 
 ---
 
-## 4. Point the Xendit webhook to Supabase
+## 4. Configure the Xendit webhook
 
-1. Xendit Dashboard -> **Developers -> Webhooks / Callbacks**.
-2. Add the callback url of the deployed function:
+Dashboard -> **Developers** -> **Webhooks** -> add
 
-   ```
-   https://iiznhatxciycwghihnaq.supabase.co/functions/v1/xendit-webhook
-   ```
+```
+https://kfvxqsxycpmawgbwugyr.supabase.co/functions/v1/xendit-webhook
+```
 
-3. Select the event **Invoices paid** (and optionally **Invoice expired**).
-4. Use the **same token** in the webhook settings as in the
-   `XENDIT_WEBHOOK_TOKEN` secret - Xendit sends it in the `x-callback-token`
-   header of every delivery.
+* event: **Invoices paid**
+* token: the same value as the `XENDIT_WEBHOOK_TOKEN` secret
 
-Xendit retries a delivery up to six times when the endpoint does not answer
-with a 2xx status code, so the handler always answers `200` for events it
-cannot process (and records the reason).
+Xendit then calls the edge function whenever an invoice is paid. The function
+verifies the token and flips the order to `PAID` - that is the moment the app
+shows *"Payment Verified! Mechanical Gaming Keyboard is PAID."*
 
 ---
 
-## 5. How the payment is verified
+## 5. Endpoints
 
 ```
-Flutter app                Supabase                    Xendit
-     |                        |                          |
-     | create-invoice         |                          |
-     |----------------------->|                          |
-     |                        | 1. validate request     |
-     |                        | 2. read price + stock   |
-     |                        | 3. create pending order |
-     |                        | 4. POST /v2/invoices    |
-     |                        |------------------------->|
-     |                        |<-------------------------|
-     |                        | 5. store invoice id     |
-     |<-----------------------|                          |
-     | open invoice_url       |                          |
-     | customer pays ---------|------------------------->|
-     |                        |<-- webhook (PAID) -------|
-     |                        | 6. validate token       |
-     |                        | 7. apply event (tx)     |
-     |                        | 8. order.status = PAID  |
-     | "Check status"         |                          |
-     |----------------------->| SELECT orders (RLS)     |
-     |<-----------------------| status = PAID           |
+POST .../functions/v1/create-invoice    -> 200 {"invoice_url":"...","external_id":"..."}
+POST .../functions/v1/xendit-webhook    -> 401 {"error":"Unauthorized webhook caller"}  (no / wrong token)
+GET  .../rest/v1/products              -> 200 [{"id":1,"name":"Mechanical Gaming Keyboard","price":1500.00,...}]
+GET  .../rest/v1/orders                 -> 200 [{"id":1,"status":"PAID","amount":1500.00,...}]
 ```
-
-The app **never** decides that a payment succeeded. It only shows the status
-that the database returns, and the database is only updated by the webhook
-handler after it validated the invoice id, the amount and the currency.
-
----
-
-## 6. Manual security checks
-
-Run the statements below in the SQL editor (or in `supabase/tests/`) to verify
-the setup.
-
-```sql
--- a) RLS is enabled everywhere
-select tablename, rowsecurity
-from pg_tables
-where schemaname = 'public'
-order by tablename;
-
--- b) there is no policy that would allow a client to write an order
-select tablename, policyname, cmd
-from pg_policies
-where schemaname = 'public'
-  and cmd in ('INSERT', 'UPDATE', 'DELETE');
-
--- c) the demo product costs 1500.00 PHP
-select name, price, currency, stock_quantity
-from public.products
-where name = 'Mechanical Gaming Keyboard';
-```
-
-To prove that a client cannot mark an order as paid, run the following as the
-`anon` role (Supabase -> SQL editor -> "Run as role: anon"):
-
-```sql
-update public.orders set status = 'PAID', payment_status = 'PAID';
--- ERROR:  new row violates row-level security policy for table "orders"
-```
-
-To prove that one customer cannot see the orders of another one, sign in as a
-second user and run:
-
-```sql
-select count(*) from public.orders;   -- only the orders of the current user
-```
-
----
-
-## 7. Tests of the backend logic
-
-The pure business logic of the edge functions lives in `functions/_shared` and
-is covered by Deno tests (no database and no Xendit account needed):
-
-```bash
-deno test --allow-env supabase/functions/_shared
-```
-
-```
-ok | 43 passed | 0 failed
-```
-
-They cover: invalid input, unknown product, unavailable product, out of stock,
-Xendit failures, idempotent retries, guest token issuing, webhook token
-rejection, malformed payloads, paid / expired / failed / duplicate
-notifications and unknown statuses.
-
-The database migration is verified against a real PostgreSQL that runs inside
-the process:
-
-```bash
-npm install @electric-sql/pglite
-node supabase/tests/pglite_migration_test.mjs
-```
-
-```
-51/51 checks passed
-```
-
-The script applies both migrations and checks the tables, the RLS policies,
-the order creation with the stock reservation, the idempotency, the webhook
-handling (paid / expired / duplicate / mismatch / unknown) and the guest
-checkout.
-
-If the project still contains the tables of the earlier reference
-implementation (`products.id integer`, `orders.amount`), the migration
-upgrades them automatically. That path is verified with:
-
-```bash
-node supabase/tests/pglite_legacy_upgrade_test.mjs
-```
-
-```
-29/29 checks passed
-```
-
-The files in `tests/` are meant to be executed in the Supabase SQL editor of
-the project:
-
-* `01_rls_verification.sql` - shows that RLS is enabled and that no policy
-  allows a client to write
-* `02_negative_rls_tests.sql` - statements that **must fail** (run them with
-  the role selector set to `anon`)

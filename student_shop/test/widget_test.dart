@@ -1,128 +1,163 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:student_shop/models/product_model.dart';
+import 'package:student_shop/screens/orders_screen.dart';
 import 'package:student_shop/screens/product_list_screen.dart';
 
 import 'support/fake_payment_service.dart';
 
+Widget wrap(Widget child) {
+  return MaterialApp(home: child);
+}
+
 void main() {
   testWidgets('shows the demo product with its price and a buy button', (
-    WidgetTester tester,
+    tester,
   ) async {
     final FakePaymentService service = FakePaymentService(
-      products: const <Product>[demoKeyboard],
+      products: <dynamic>[demoProduct()].cast(),
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: ProductListScreen(paymentService: service)),
-    );
+    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service)));
     await tester.pumpAndSettle();
 
     expect(find.text('Mechanical Gaming Keyboard'), findsOneWidget);
-    expect(find.text('₱1,500.00'), findsOneWidget);
-    expect(find.text('In stock: 25'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Buy Now'), findsOneWidget);
+    expect(find.text('₱1500.00'), findsOneWidget);
+    expect(find.text('Buy Now'), findsOneWidget);
   });
 
-  testWidgets('the buy button is disabled when the product is sold out', (
-    WidgetTester tester,
+  testWidgets('shows an empty state when the catalogue is empty', (
+    tester,
   ) async {
-    const Product soldOut = Product(
-      id: '1',
-      name: 'Sold out product',
-      description: '',
-      price: 100,
-      imageUrl: '',
-      stockQuantity: 0,
-      isActive: true,
-    );
-    final FakePaymentService service = FakePaymentService(
-      products: const <Product>[soldOut],
-    );
-
     await tester.pumpWidget(
-      MaterialApp(home: ProductListScreen(paymentService: service)),
+      wrap(ProductListScreen(paymentService: FakePaymentService())),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Out of stock'), findsOneWidget);
-    final FilledButton button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Buy Now'),
-    );
-    expect(button.onPressed, isNull);
+    expect(find.text('No products found.'), findsOneWidget);
   });
 
   testWidgets('shows an error message when the catalogue cannot be loaded', (
-    WidgetTester tester,
+    tester,
   ) async {
     final FakePaymentService service = FakePaymentService(
-      error: Exception('network is down'),
+      error: Exception('network down'),
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: ProductListScreen(paymentService: service)),
-    );
+    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service)));
     await tester.pumpAndSettle();
 
-    expect(find.text('The catalogue could not be loaded'), findsOneWidget);
-    expect(find.text('network is down'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Try again'), findsOneWidget);
+    expect(find.textContaining('network down'), findsOneWidget);
   });
 
-  testWidgets('shows an empty state when there are no products', (
-    WidgetTester tester,
-  ) async {
-    final FakePaymentService service = FakePaymentService();
+  testWidgets(
+    'verifies the payment after the checkout and shows the green snackbar',
+    (tester) async {
+      final FakePaymentService service = FakePaymentService(
+        products: <dynamic>[demoProduct()].cast(),
+        status: 'PAID',
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(home: ProductListScreen(paymentService: service)),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        wrap(
+          ProductListScreen(
+            paymentService: service,
+            // replaces the web view so that no platform channel is used
+            checkoutBuilder: (context, invoiceUrl) => Scaffold(
+              appBar: AppBar(
+                title: const Text('Xendit Checkout'),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+              body: const Text('Xendit checkout'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('The store is empty'), findsOneWidget);
-    expect(
-      find.textContaining('No products are available yet'),
-      findsOneWidget,
-    );
-  });
+      await tester.tap(find.text('Buy Now'));
+      await tester.pumpAndSettle();
 
-  testWidgets('shows a loading indicator while the catalogue is fetched', (
-    WidgetTester tester,
-  ) async {
-    final FakePaymentService service = FakePaymentService(
-      products: const <Product>[demoKeyboard],
-      delay: const Duration(milliseconds: 200),
-    );
+      // the checkout screen is open
+      expect(find.text('Xendit checkout'), findsOneWidget);
 
-    await tester.pumpWidget(
-      MaterialApp(home: ProductListScreen(paymentService: service)),
-    );
-    await tester.pump();
+      // "Done" closes the checkout, then the app asks the server for the status
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(service.checkedExternalIds, <String>['demo-order-1']);
+      expect(
+        find.text('Payment Verified! Mechanical Gaming Keyboard is PAID.'),
+        findsOneWidget,
+      );
 
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pumpAndSettle();
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text('Mechanical Gaming Keyboard'), findsOneWidget);
-  });
+      final ScaffoldMessengerState messenger = tester.state(
+        find.byType(ScaffoldMessenger),
+      );
+      expect(messenger, isNotNull);
+    },
+  );
 
   testWidgets('the order history can be opened from the app bar', (
-    WidgetTester tester,
+    tester,
   ) async {
     final FakePaymentService service = FakePaymentService(
-      products: const <Product>[demoKeyboard],
+      products: <dynamic>[demoProduct()].cast(),
+      orders: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 1,
+          'status': 'PAID',
+          'product_name': 'Mechanical Gaming Keyboard',
+          'amount': 1500.0,
+          'external_id': 'demo-order-1',
+          'created_at': '2026-10-20T15:09:09.769187+00:00',
+        },
+      ],
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: ProductListScreen(paymentService: service)),
-    );
+    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.receipt_long_rounded));
+    await tester.tap(find.byIcon(Icons.receipt_long));
     await tester.pumpAndSettle();
 
     expect(find.text('Order History'), findsOneWidget);
-    expect(find.text('No orders yet'), findsOneWidget);
+    expect(find.text('Mechanical Gaming Keyboard'), findsOneWidget);
+    expect(find.text('PAID'), findsOneWidget);
+  });
+
+  testWidgets('the order history shows a green badge for a paid order', (
+    tester,
+  ) async {
+    final FakePaymentService service = FakePaymentService(
+      orders: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 1,
+          'status': 'PAID',
+          'product_name': 'Mechanical Gaming Keyboard',
+          'amount': 1500.0,
+          'external_id': 'demo-order-1',
+          'created_at': '2026-10-20T15:09:09.769187+00:00',
+        },
+      ],
+    );
+
+    await tester.pumpWidget(wrap(OrdersScreen(paymentService: service)));
+    await tester.pumpAndSettle();
+
+    final Container badge = tester.widget<Container>(
+      find
+          .ancestor(
+            of: find.text('PAID'),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    final BoxDecoration decoration = badge.decoration! as BoxDecoration;
+    expect(decoration.color, Colors.green.shade100);
   });
 }

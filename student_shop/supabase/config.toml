@@ -7,7 +7,7 @@
 # `supabase functions deploy`). The dashboard project settings are the source
 # of truth - keep both in sync.
 
-project_id = "BMC-ecom1"
+project_id = "kfvxqsxycpmawgbwugyr"
 
 [api]
 enabled = true

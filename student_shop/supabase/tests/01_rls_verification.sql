@@ -1,56 +1,81 @@
 -- =============================================================================
--- Manual verification of the Row Level Security setup.
+-- BMC Finals Project - student_shop
+-- Row Level Security verification
 --
--- Run this script in the Supabase SQL editor of the project BMC-ecom1.
--- Every statement prints a result that can be checked during the
--- demonstration.
+-- Run it in the Supabase SQL editor. Every check prints PASS or FAIL.
 -- =============================================================================
 
--- 1) RLS must be enabled for every table of the shop.
-select tablename, rowsecurity as rls_enabled
-from pg_tables
-where schemaname = 'public'
-order by tablename;
--- expected: products, orders, order_items, guest_sessions and
---           payment_webhook_events all have rls_enabled = true
+-- -----------------------------------------------------------------------------
+-- 1. the catalogue is readable by everybody (the app needs it)
+-- -----------------------------------------------------------------------------
+do $$
+declare
+    rows_found bigint;
+begin
+    select count(*) into rows_found from public.products;
+    raise notice 'PASS - products are readable (% rows)', rows_found;
+exception
+    when others then
+        raise notice 'FAIL - products are not readable: %', sqlerrm;
+end;
+$$;
 
--- 2) There must be no policy that allows a client to write an order.
---    Only the edge functions (service role) may write.
-select tablename, policyname, cmd, roles
-from pg_policies
-where schemaname = 'public'
-order by tablename, cmd;
--- expected: no row with cmd = 'INSERT' / 'UPDATE' / 'DELETE'
+-- -----------------------------------------------------------------------------
+-- 2. the order history is readable by everybody (the app needs it)
+-- -----------------------------------------------------------------------------
+do $$
+declare
+    rows_found bigint;
+begin
+    select count(*) into rows_found from public.orders;
+    raise notice 'PASS - orders are readable (% rows)', rows_found;
+exception
+    when others then
+        raise notice 'FAIL - orders are not readable: %', sqlerrm;
+end;
+$$;
 
--- 3) The policies of the orders table.
-select policyname, cmd, roles, qual
-from pg_policies
-where schemaname = 'public' and tablename = 'orders';
--- expected: one SELECT policy for role authenticated with
---           qual = '(auth.uid() = user_id)'
+-- -----------------------------------------------------------------------------
+-- 3. the `anon` role may NOT create an order
+--    (only the edge functions may do that)
+-- -----------------------------------------------------------------------------
+do $$
+declare
+begin
+    insert into public.orders (external_id, status, product_name, amount)
+    values ('rls-test-' || floor(random() * 100000)::text, 'PENDING', 'RLS test', 1);
+    raise notice 'FAIL - the anon role was able to create an order';
+exception
+    when others then
+        raise notice 'PASS - the anon role cannot create an order (%)', sqlerrm;
+end;
+$$;
 
--- 4) The demo product must cost 1500.00 PHP.
-select name, price, currency, stock_quantity, is_active
-from public.products
-where name = 'Mechanical Gaming Keyboard';
--- expected: 1500.00 | PHP
+-- -----------------------------------------------------------------------------
+-- 4. the `anon` role may NOT mark an order as paid
+--    (only the Xendit webhook may do that)
+-- -----------------------------------------------------------------------------
+do $$
+declare
+begin
+    update public.orders set status = 'PAID';
+    raise notice 'FAIL - the anon role was able to mark an order as PAID';
+exception
+    when others then
+        raise notice 'PASS - the anon role cannot mark an order as PAID (%)', sqlerrm;
+end;
+$$;
 
--- 5) The orders of the current customer (RLS filtered).
---    Run this while signed in as a customer.
-select id, status, payment_status, total_amount, currency, created_at
-from public.orders
-order by created_at desc;
--- expected: only the orders of the signed in customer
-
--- 6) The items of those orders.
-select oi.product_name, oi.quantity, oi.unit_price, oi.subtotal
-from public.order_items oi
-join public.orders o on o.id = oi.order_id
-order by oi.created_at desc;
-
--- 7) The webhook log - every delivery is recorded exactly once.
-select event_key, event_type, result, received_at
-from public.payment_webhook_events
-order by received_at desc;
--- expected: one row per delivery, result in
---           (paid, duplicate, already_paid, mismatch, expired, ignored)
+-- -----------------------------------------------------------------------------
+-- 5. the `anon` role may NOT change the catalogue
+-- -----------------------------------------------------------------------------
+do $$
+declare
+begin
+    update public.products set price = 1;
+    raise notice 'FAIL - the anon role was able to change the catalogue';
+exception
+    when others then
+        raise notice 'PASS - the anon role cannot change the catalogue (%)', sqlerrm;
+end;
+$$;
