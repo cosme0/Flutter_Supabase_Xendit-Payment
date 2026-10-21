@@ -7,7 +7,12 @@ import 'orders_screen.dart';
 import 'xendit_webview_screen.dart';
 
 class ProductListScreen extends StatefulWidget {
-  const ProductListScreen({super.key, this.paymentService, this.checkoutBuilder});
+  const ProductListScreen({
+    super.key,
+    this.paymentService,
+    this.checkoutBuilder,
+    this.bootstrap,
+  });
 
   /// Allows the tests to inject a fake service.
   final PaymentService? paymentService;
@@ -17,6 +22,11 @@ class ProductListScreen extends StatefulWidget {
   /// The tests replace it with a stub so that no web view is created.
   final Widget Function(BuildContext context, String invoiceUrl)?
   checkoutBuilder;
+
+  /// Prepares the Supabase client.
+  ///
+  /// The tests replace it so that no client is created.
+  final Future<String?> Function()? bootstrap;
 
   @override
   State<ProductListScreen> createState() => _ProductListScreenState();
@@ -39,7 +49,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   /// Initialises Supabase and then loads the catalogue.
   Future<void> _start() async {
-    final String? bootstrapError = await AppBootstrap.initialize();
+    String? bootstrapError;
+    try {
+      bootstrapError = await (widget.bootstrap?.call() ??
+          AppBootstrap.initialize());
+    } catch (error) {
+      bootstrapError = '$error';
+    }
     if (!mounted) return;
     await _loadProducts(bootstrapError: bootstrapError);
   }

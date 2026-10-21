@@ -9,6 +9,9 @@ Widget wrap(Widget child) {
   return MaterialApp(home: child);
 }
 
+/// The store never talks to Supabase in the tests.
+Future<String?> noBootstrap() async => null;
+
 void main() {
   testWidgets('shows the demo product with its price and a buy button', (
     tester,
@@ -17,7 +20,7 @@ void main() {
       products: <dynamic>[demoProduct()].cast(),
     );
 
-    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service)));
+    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service, bootstrap: noBootstrap)));
     await tester.pumpAndSettle();
 
     expect(find.text('Mechanical Gaming Keyboard'), findsOneWidget);
@@ -29,7 +32,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      wrap(ProductListScreen(paymentService: FakePaymentService())),
+      wrap(ProductListScreen(paymentService: FakePaymentService(), bootstrap: noBootstrap)),
     );
     await tester.pumpAndSettle();
 
@@ -43,7 +46,7 @@ void main() {
       error: Exception('network down'),
     );
 
-    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service)));
+    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service, bootstrap: noBootstrap)));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('network down'), findsOneWidget);
@@ -61,6 +64,7 @@ void main() {
         wrap(
           ProductListScreen(
             paymentService: service,
+            bootstrap: noBootstrap,
             // replaces the web view so that no platform channel is used
             checkoutBuilder: (context, invoiceUrl) => Scaffold(
               appBar: AppBar(
@@ -119,7 +123,7 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service)));
+    await tester.pumpWidget(wrap(ProductListScreen(paymentService: service, bootstrap: noBootstrap)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.receipt_long));

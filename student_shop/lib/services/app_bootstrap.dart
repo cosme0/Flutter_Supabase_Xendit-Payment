@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
@@ -16,12 +14,6 @@ class AppBootstrap {
 
   /// Initialises Supabase and returns `null` on success or an error message.
   static Future<String?> initialize() {
-    // The unit tests do not run inside a real app - there is no platform
-    // channel and no server, so the client setup is skipped.
-    if (Platform.environment.containsKey('FLUTTER_TEST')) {
-      return Future<String?>.value(null);
-    }
-
     return _initialisation ??= _initialise();
   }
 
